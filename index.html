@@ -3217,15 +3217,6 @@ function CubicacionApp() {
       )}
 
       <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}`, position: "relative", overflow: "visible" }} className="rounded-lg p-4 mb-5 no-print">
-        {camposFleteCompletos && guardadoActual && pct >= 90 && (
-          <Mascota
-            key={`pizarra-${mascotaGuardarKey}`}
-            tipo="pizarra"
-            texto={`¡${pct.toFixed(0)}% de uso!`}
-            size={100}
-            style={{ position: "absolute", right: 8, top: -70 }}
-          />
-        )}
         <span style={{ color: COLORS.muted }} className="text-xs uppercase tracking-wide flex items-center gap-1.5 mb-3">
           <Route size={14} /> Flete por comuna
         </span>
@@ -3287,7 +3278,7 @@ function CubicacionApp() {
                 </span>
                 {mascotaGuardarKey > 0 && (
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <Mascota key={mascotaGuardarKey} tipo="guardar" size={70} />
+                    <Mascota key={mascotaGuardarKey} tipo="pizarra" texto="Flete calculado" size={90} />
                   </div>
                 )}
               </>

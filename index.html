@@ -918,6 +918,18 @@ function CubicacionApp() {
         const capacidad = truckType === "rampla" ? cap.mtsRampla : cap.mtsCamion34;
         if (capacidad > 0) fracEmboqTotal += (b.bultos * (cap.largo || 0)) / capacidad;
       });
+      // BUGFIX: el granel (tubos que quedaron sin host mayor donde anidarse,
+      // ej. los que sobran de un diámetro intermedio) también ocupa espacio
+      // real en el camión con SU PROPIO diámetro exterior — tenga o no algo
+      // anidado adentro (eso no cambia el diámetro exterior). Antes esto no
+      // se sumaba, dejando el % de uso muy por debajo del real cuando sobraba
+      // granel de un diámetro intermedio.
+      (resultadoEmboquillado.granelResultante || []).forEach((g) => {
+        const cap = capacidadPorDiam[g.diam];
+        if (!cap) return;
+        const capacidad = truckType === "rampla" ? cap.mtsRampla : cap.mtsCamion34;
+        if (capacidad > 0) fracEmboqTotal += (g.cantidad * (cap.largo || 0)) / capacidad;
+      });
     }
     const idsEmboq = new Set(itemsEmboq.map((it) => it.id));
 

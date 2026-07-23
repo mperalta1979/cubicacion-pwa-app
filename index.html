@@ -3220,8 +3220,8 @@ function CubicacionApp() {
                         </div>
                       )}
                       {it.detalleEmboquillado.granelResultante.length > 0 && (
-                        <div style={{ color: COLORS.danger }}>
-                          Sin host disponible (quedan como Granel aparte):{" "}
+                        <div style={{ color: COLORS.text }}>
+                          Viajan sueltos con su propio diámetro (algunos pueden traer un tubo menor adentro — ya están incluidos en el % de uso de arriba):{" "}
                           {it.detalleEmboquillado.granelResultante.map((g) => `${g.cantidad}×${g.diam}mm`).join(", ")}
                         </div>
                       )}

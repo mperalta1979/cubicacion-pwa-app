@@ -168,16 +168,6 @@ const JSONBIN_KEY = "$2a$10$U8z6AIOUslgzJvlVPbY/0e4AUgRBHFEpSQ0odo6LP.7rKqChiRVL
 const JSONBIN_CONFIGURADO = JSONBIN_ID && !JSONBIN_ID.startsWith("PEGA_AQUI") && JSONBIN_KEY && !JSONBIN_KEY.startsWith("PEGA_AQUI");
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
-// ====================================================================
-// RECUPERACIÓN DE EMERGENCIA — SOLO PARA DESBLOQUEOS PUNTUALES.
-// Cambia este token por otro valor cualquiera antes de usarlo, y BORRA
-// este bloque completo (y el que dice "PANTALLA DE RECUPERACIÓN" más
-// abajo) apenas hayas recuperado el acceso. Dejarlo activo permite que
-// cualquiera que conozca el token cambie la clave de cualquier usuario
-// sin loguearse, así que no debe quedar publicado de forma permanente.
-// ====================================================================
-const RECOVERY_TOKEN = "petroflex-recovery-2026";
-
 async function remoteGetAll() {
   try {
     const res = await fetch(JSONBIN_URL + "/latest", {
@@ -724,44 +714,6 @@ function CubicacionApp() {
   const [adminMsg, setAdminMsg] = React.useState("");
   const [pwEditingUser, setPwEditingUser] = React.useState(null);
   const [pwEditingValues, setPwEditingValues] = React.useState({ nueva: "", confirmar: "" });
-
-  const [recoverForm, setRecoverForm] = React.useState({ username: "admin", nueva: "", confirmar: "" });
-  const [recoverMsg, setRecoverMsg] = React.useState("");
-  const enModoRecuperacion =
-    new URLSearchParams(window.location.search).get("recovery") === RECOVERY_TOKEN;
-
-  async function handleRecoverPassword() {
-    setRecoverMsg("");
-    const uname = recoverForm.username.trim();
-    if (!uname || !recoverForm.nueva || !recoverForm.confirmar) {
-      setRecoverMsg("Completa todos los campos.");
-      return;
-    }
-    if (!ALNUM_RE.test(recoverForm.nueva) || recoverForm.nueva.length < 6) {
-      setRecoverMsg("La nueva clave debe ser alfanumérica y de al menos 6 caracteres.");
-      return;
-    }
-    if (recoverForm.nueva !== recoverForm.confirmar) {
-      setRecoverMsg("Las claves no coinciden.");
-      return;
-    }
-    const encontrado = users.find((u) => u.username.toLowerCase() === uname.toLowerCase());
-    const salt = randomSalt();
-    const hash = await hashPassword(recoverForm.nueva, salt);
-    let next;
-    if (encontrado) {
-      next = users.map((u) =>
-        u.username.toLowerCase() === uname.toLowerCase() ? { ...u, salt, hash, blocked: false } : u
-      );
-    } else {
-      next = [...users, { username: uname, salt, hash, role: "admin", blocked: false }];
-    }
-    await persistUsers(next);
-    setRecoverMsg(
-      `Listo. La clave de "${uname}" fue actualizada. Ya puedes iniciar sesión normalmente y luego debes borrar el bloque de recuperación del código.`
-    );
-    setRecoverForm({ username: "admin", nueva: "", confirmar: "" });
-  }
 
   React.useEffect(() => {
     (async () => {
@@ -2010,65 +1962,6 @@ function CubicacionApp() {
     return (
       <div style={{ background: COLORS.bg, color: COLORS.muted, minHeight: 480 }} className="flex items-center justify-center p-8 font-sans">
         Cargando…
-      </div>
-    );
-  }
-
-  if ((view === "login" || !session || !me) && enModoRecuperacion) {
-    // PANTALLA DE RECUPERACIÓN — de uso puntual. Borrar junto con RECOVERY_TOKEN
-    // apenas se recupere el acceso normal.
-    return (
-      <div style={{ background: COLORS.panel, color: COLORS.text, minHeight: 480, fontFamily: "Inter, sans-serif" }} className="flex items-center justify-center p-6">
-        <style>{fontImport}</style>
-        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}` }} className="w-full max-w-sm rounded-lg p-8 shadow-sm">
-          <div className="flex items-center gap-3 mb-2">
-            <KeyRound size={28} color={COLORS.danger} />
-            <h1 style={{ fontFamily: "Oswald, sans-serif", letterSpacing: "0.02em", color: COLORS.navy }} className="text-xl font-bold uppercase">
-              Recuperación de emergencia
-            </h1>
-          </div>
-          <p style={{ color: COLORS.muted }} className="text-sm mb-6">
-            Restablece la clave de un usuario sin necesidad de iniciar sesión. Úsalo solo para desbloquearte y luego elimina esta función del código.
-          </p>
-          <div className="space-y-3">
-            <Field label="Usuario a restablecer">
-              <input
-                value={recoverForm.username}
-                onChange={(e) => setRecoverForm({ ...recoverForm, username: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-3 py-2.5 outline-none text-sm"
-              />
-            </Field>
-            <Field label="Clave nueva (alfanumérica, 6+ caracteres)">
-              <PasswordInput
-                value={recoverForm.nueva}
-                onChange={(e) => setRecoverForm({ ...recoverForm, nueva: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-3 py-2.5 outline-none text-sm"
-              />
-            </Field>
-            <Field label="Confirmar clave nueva">
-              <PasswordInput
-                value={recoverForm.confirmar}
-                onChange={(e) => setRecoverForm({ ...recoverForm, confirmar: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-3 py-2.5 outline-none text-sm"
-              />
-            </Field>
-          </div>
-          {recoverMsg && (
-            <p style={{ color: recoverMsg.startsWith("Listo") ? COLORS.navy : COLORS.danger }} className="text-xs mt-3">
-              {recoverMsg}
-            </p>
-          )}
-          <button
-            onClick={handleRecoverPassword}
-            style={{ background: COLORS.danger, color: "#FFFFFF" }}
-            className="w-full rounded py-2.5 mt-4 font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90"
-          >
-            <KeyRound size={16} /> Restablecer clave
-          </button>
-        </div>
       </div>
     );
   }

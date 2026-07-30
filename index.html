@@ -168,6 +168,16 @@ const JSONBIN_KEY = "$2a$10$U8z6AIOUslgzJvlVPbY/0e4AUgRBHFEpSQ0odo6LP.7rKqChiRVL
 const JSONBIN_CONFIGURADO = JSONBIN_ID && !JSONBIN_ID.startsWith("PEGA_AQUI") && JSONBIN_KEY && !JSONBIN_KEY.startsWith("PEGA_AQUI");
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
+// ====================================================================
+// RECUPERACIÓN DE EMERGENCIA — SOLO PARA DESBLOQUEOS PUNTUALES.
+// Cambia este token por otro valor cualquiera antes de usarlo, y BORRA
+// este bloque completo (y el que dice "PANTALLA DE RECUPERACIÓN" más
+// abajo) apenas hayas recuperado el acceso. Dejarlo activo permite que
+// cualquiera que conozca el token cambie la clave de cualquier usuario
+// sin loguearse, así que no debe quedar publicado de forma permanente.
+// ====================================================================
+const RECOVERY_TOKEN = "petroflex-recovery-2026";
+
 async function remoteGetAll() {
   try {
     const res = await fetch(JSONBIN_URL + "/latest", {
@@ -712,9 +722,46 @@ function CubicacionApp() {
 
   const [newUser, setNewUser] = React.useState({ username: "", password: "", role: "user" });
   const [adminMsg, setAdminMsg] = React.useState("");
+  const [pwEditingUser, setPwEditingUser] = React.useState(null);
+  const [pwEditingValues, setPwEditingValues] = React.useState({ nueva: "", confirmar: "" });
 
-  const [pwForm, setPwForm] = React.useState({ actual: "", nueva: "", confirmar: "" });
-  const [pwMsg, setPwMsg] = React.useState("");
+  const [recoverForm, setRecoverForm] = React.useState({ username: "admin", nueva: "", confirmar: "" });
+  const [recoverMsg, setRecoverMsg] = React.useState("");
+  const enModoRecuperacion =
+    new URLSearchParams(window.location.search).get("recovery") === RECOVERY_TOKEN;
+
+  async function handleRecoverPassword() {
+    setRecoverMsg("");
+    const uname = recoverForm.username.trim();
+    if (!uname || !recoverForm.nueva || !recoverForm.confirmar) {
+      setRecoverMsg("Completa todos los campos.");
+      return;
+    }
+    if (!ALNUM_RE.test(recoverForm.nueva) || recoverForm.nueva.length < 6) {
+      setRecoverMsg("La nueva clave debe ser alfanumérica y de al menos 6 caracteres.");
+      return;
+    }
+    if (recoverForm.nueva !== recoverForm.confirmar) {
+      setRecoverMsg("Las claves no coinciden.");
+      return;
+    }
+    const encontrado = users.find((u) => u.username.toLowerCase() === uname.toLowerCase());
+    const salt = randomSalt();
+    const hash = await hashPassword(recoverForm.nueva, salt);
+    let next;
+    if (encontrado) {
+      next = users.map((u) =>
+        u.username.toLowerCase() === uname.toLowerCase() ? { ...u, salt, hash, blocked: false } : u
+      );
+    } else {
+      next = [...users, { username: uname, salt, hash, role: "admin", blocked: false }];
+    }
+    await persistUsers(next);
+    setRecoverMsg(
+      `Listo. La clave de "${uname}" fue actualizada. Ya puedes iniciar sesión normalmente y luego debes borrar el bloque de recuperación del código.`
+    );
+    setRecoverForm({ username: "admin", nueva: "", confirmar: "" });
+  }
 
   React.useEffect(() => {
     (async () => {
@@ -1932,13 +1979,17 @@ function CubicacionApp() {
     );
     await persistUsers(next);
   }
-  async function adminResetPassword(username) {
-    const tempPass = "Temp" + Math.floor(1000 + Math.random() * 9000);
+  async function adminSetUserPassword(username, nueva) {
+    if (!ALNUM_RE.test(nueva) || nueva.length < 6) {
+      setAdminMsg("La clave debe ser alfanumérica y de al menos 6 caracteres.");
+      return false;
+    }
     const salt = randomSalt();
-    const hash = await hashPassword(tempPass, salt);
+    const hash = await hashPassword(nueva, salt);
     const next = users.map((u) => (u.username === username ? { ...u, salt, hash } : u));
     await persistUsers(next);
-    setAdminMsg(`Clave temporal para ${username}: ${tempPass} (compártela de forma segura)`);
+    setAdminMsg(`Clave de "${username}" actualizada correctamente.`);
+    return true;
   }
   async function deleteUser(username) {
     if (username === session) return;
@@ -1946,32 +1997,6 @@ function CubicacionApp() {
     await persistUsers(next);
   }
 
-  async function handleChangePassword() {
-    setPwMsg("");
-    if (!pwForm.actual || !pwForm.nueva || !pwForm.confirmar) {
-      setPwMsg("Completa todos los campos.");
-      return;
-    }
-    const hashActual = await hashPassword(pwForm.actual, me.salt);
-    if (hashActual !== me.hash) {
-      setPwMsg("La clave actual no es correcta.");
-      return;
-    }
-    if (!ALNUM_RE.test(pwForm.nueva) || pwForm.nueva.length < 6) {
-      setPwMsg("La nueva clave debe ser alfanumérica y de al menos 6 caracteres.");
-      return;
-    }
-    if (pwForm.nueva !== pwForm.confirmar) {
-      setPwMsg("Las claves nuevas no coinciden.");
-      return;
-    }
-    const salt = randomSalt();
-    const hash = await hashPassword(pwForm.nueva, salt);
-    const next = users.map((u) => (u.username === session ? { ...u, salt, hash } : u));
-    await persistUsers(next);
-    setPwForm({ actual: "", nueva: "", confirmar: "" });
-    setPwMsg("Clave actualizada correctamente.");
-  }
 
   const fontImport = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap');
     @media print {
@@ -1985,6 +2010,65 @@ function CubicacionApp() {
     return (
       <div style={{ background: COLORS.bg, color: COLORS.muted, minHeight: 480 }} className="flex items-center justify-center p-8 font-sans">
         Cargando…
+      </div>
+    );
+  }
+
+  if ((view === "login" || !session || !me) && enModoRecuperacion) {
+    // PANTALLA DE RECUPERACIÓN — de uso puntual. Borrar junto con RECOVERY_TOKEN
+    // apenas se recupere el acceso normal.
+    return (
+      <div style={{ background: COLORS.panel, color: COLORS.text, minHeight: 480, fontFamily: "Inter, sans-serif" }} className="flex items-center justify-center p-6">
+        <style>{fontImport}</style>
+        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}` }} className="w-full max-w-sm rounded-lg p-8 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <KeyRound size={28} color={COLORS.danger} />
+            <h1 style={{ fontFamily: "Oswald, sans-serif", letterSpacing: "0.02em", color: COLORS.navy }} className="text-xl font-bold uppercase">
+              Recuperación de emergencia
+            </h1>
+          </div>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+            Restablece la clave de un usuario sin necesidad de iniciar sesión. Úsalo solo para desbloquearte y luego elimina esta función del código.
+          </p>
+          <div className="space-y-3">
+            <Field label="Usuario a restablecer">
+              <input
+                value={recoverForm.username}
+                onChange={(e) => setRecoverForm({ ...recoverForm, username: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+            <Field label="Clave nueva (alfanumérica, 6+ caracteres)">
+              <PasswordInput
+                value={recoverForm.nueva}
+                onChange={(e) => setRecoverForm({ ...recoverForm, nueva: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+            <Field label="Confirmar clave nueva">
+              <PasswordInput
+                value={recoverForm.confirmar}
+                onChange={(e) => setRecoverForm({ ...recoverForm, confirmar: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+          </div>
+          {recoverMsg && (
+            <p style={{ color: recoverMsg.startsWith("Listo") ? COLORS.navy : COLORS.danger }} className="text-xs mt-3">
+              {recoverMsg}
+            </p>
+          )}
+          <button
+            onClick={handleRecoverPassword}
+            style={{ background: COLORS.danger, color: "#FFFFFF" }}
+            className="w-full rounded py-2.5 mt-4 font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90"
+          >
+            <KeyRound size={16} /> Restablecer clave
+          </button>
+        </div>
       </div>
     );
   }
@@ -2105,11 +2189,6 @@ function CubicacionApp() {
             )}
           </button>
         )}
-        {view === "app" && (
-          <button onClick={() => setView("cuenta")} style={{ color: COLORS.muted }} className="hover:text-black" title="Mi cuenta">
-            <KeyRound size={18} />
-          </button>
-        )}
         <span style={{ color: COLORS.muted }} className="text-sm hidden sm:inline">
           {session} {me.role === "admin" && <ShieldCheck size={13} className="inline mb-0.5" color={COLORS.celeste} />}
         </span>
@@ -2221,8 +2300,8 @@ function CubicacionApp() {
                       </>
                     )}
                   </button>
-                  <button onClick={() => adminResetPassword(u.username)} style={{ color: COLORS.muted }} className="hover:text-black">
-                    Resetear clave
+                  <button onClick={() => { setPwEditingUser(pwEditingUser === u.username ? null : u.username); setPwEditingValues({ nueva: "", confirmar: "" }); setAdminMsg(""); }} style={{ color: COLORS.muted }} className="hover:text-black">
+                    Cambiar clave
                   </button>
                   <button
                     disabled={u.username === session}
@@ -2233,6 +2312,50 @@ function CubicacionApp() {
                     <Trash2 size={13} />
                   </button>
                 </div>
+                {pwEditingUser === u.username && (
+                  <div style={{ width: "100%", borderTop: `1px solid ${COLORS.border}` }} className="mt-2 pt-2 flex flex-wrap items-end gap-2">
+                    <Field label="Clave nueva">
+                      <PasswordInput
+                        value={pwEditingValues.nueva}
+                        onChange={(e) => setPwEditingValues({ ...pwEditingValues, nueva: e.target.value })}
+                        style={inputStyle()}
+                        className="rounded px-2.5 py-1.5 text-sm outline-none"
+                      />
+                    </Field>
+                    <Field label="Confirmar">
+                      <PasswordInput
+                        value={pwEditingValues.confirmar}
+                        onChange={(e) => setPwEditingValues({ ...pwEditingValues, confirmar: e.target.value })}
+                        style={inputStyle()}
+                        className="rounded px-2.5 py-1.5 text-sm outline-none"
+                      />
+                    </Field>
+                    <button
+                      onClick={async () => {
+                        if (pwEditingValues.nueva !== pwEditingValues.confirmar) {
+                          setAdminMsg("Las claves no coinciden.");
+                          return;
+                        }
+                        const ok = await adminSetUserPassword(u.username, pwEditingValues.nueva);
+                        if (ok) {
+                          setPwEditingUser(null);
+                          setPwEditingValues({ nueva: "", confirmar: "" });
+                        }
+                      }}
+                      style={{ background: COLORS.navy, color: "#FFFFFF" }}
+                      className="rounded px-3 py-1.5 text-xs font-semibold hover:opacity-90"
+                    >
+                      Guardar
+                    </button>
+                    <button
+                      onClick={() => setPwEditingUser(null)}
+                      style={{ color: COLORS.muted }}
+                      className="text-xs hover:text-black"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2749,61 +2872,6 @@ function CubicacionApp() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  if (view === "cuenta") {
-    return (
-      <div style={{ background: COLORS.panel, color: COLORS.text, minHeight: 480, fontFamily: "Inter, sans-serif" }} className="p-4 sm:p-6">
-        <style>{fontImport}</style>
-        {Header}
-        <h2 style={{ fontFamily: "Oswald, sans-serif", color: COLORS.navy }} className="text-lg font-bold uppercase mb-4">
-          Mi cuenta
-        </h2>
-        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}` }} className="rounded-lg p-4 max-w-sm">
-          <span style={{ color: COLORS.muted }} className="text-xs uppercase tracking-wide flex items-center gap-1.5 mb-3">
-            <KeyRound size={14} /> Cambiar clave
-          </span>
-          <div className="space-y-2.5">
-            <Field label="Clave actual">
-              <PasswordInput
-                value={pwForm.actual}
-                onChange={(e) => setPwForm({ ...pwForm, actual: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-2.5 py-2 text-sm outline-none"
-              />
-            </Field>
-            <Field label="Clave nueva (alfanumérica, 6+ caracteres)">
-              <PasswordInput
-                value={pwForm.nueva}
-                onChange={(e) => setPwForm({ ...pwForm, nueva: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-2.5 py-2 text-sm outline-none"
-              />
-            </Field>
-            <Field label="Confirmar clave nueva">
-              <PasswordInput
-                value={pwForm.confirmar}
-                onChange={(e) => setPwForm({ ...pwForm, confirmar: e.target.value })}
-                style={inputStyle()}
-                className="w-full rounded px-2.5 py-2 text-sm outline-none"
-              />
-            </Field>
-          </div>
-          {pwMsg && (
-            <p style={{ color: pwMsg.includes("correctamente") ? COLORS.navy : COLORS.danger }} className="text-xs mt-3">
-              {pwMsg}
-            </p>
-          )}
-          <button
-            onClick={handleChangePassword}
-            style={{ background: COLORS.navy, color: "#FFFFFF" }}
-            className="w-full rounded py-2.5 mt-4 font-semibold text-sm flex items-center justify-center gap-2"
-          >
-            <Save size={15} /> Guardar nueva clave
-          </button>
         </div>
       </div>
     );

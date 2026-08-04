@@ -1726,7 +1726,7 @@ function CubicacionApp() {
       modoExceso,
       fecha,
     };
-    const next = [record, ...trips].slice(0, 50);
+    const next = [record, ...trips].slice(0, 500);
     setTrips(next);
     await storageSet("trips", JSON.stringify(next), true);
 

@@ -1044,9 +1044,9 @@ function CubicacionApp() {
     return s + (TRUCKS["3/4"].capacidad > 0 ? (volumen / TRUCKS["3/4"].capacidad) * 100 : 0);
   }, 0);
   const excedeCapacidad34 = pctEn34 > 100;
-  const esSantiagoASeptima = regionComuna === "VII Maule";
+  const permisoCamion = (me && me.truckPermission) || "mixto";
   const requiereAutorizacionRampla =
-    !!me && me.role !== "admin" && truckType === "rampla" && esSantiagoASeptima && !tiene12m && !excedeCapacidad34 && items.length > 0;
+    !!me && me.role !== "admin" && truckType === "rampla" && permisoCamion === "34" && !tiene12m && !excedeCapacidad34 && items.length > 0;
   const solicitudActual = requiereAutorizacionRampla
     ? authRequests
         .filter((r) => r.user === session && r.comuna === comunaInput && r.truck === "rampla")
@@ -1913,7 +1913,7 @@ function CubicacionApp() {
     }
     const salt = randomSalt();
     const hash = await hashPassword(pass, salt);
-    const next = [...users, { username: uname, salt, hash, role: newUser.role, blocked: false }];
+    const next = [...users, { username: uname, salt, hash, role: newUser.role, blocked: false, truckPermission: "mixto" }];
     await persistUsers(next);
     setNewUser({ username: "", password: "", role: "user" });
     setAdminMsg("Usuario creado.");
@@ -1929,6 +1929,10 @@ function CubicacionApp() {
     const next = users.map((u) =>
       u.username === username ? { ...u, role: u.role === "admin" ? "user" : "admin" } : u
     );
+    await persistUsers(next);
+  }
+  async function setUserTruckPermission(username, valor) {
+    const next = users.map((u) => (u.username === username ? { ...u, truckPermission: valor } : u));
     await persistUsers(next);
   }
   async function adminSetUserPassword(username, nueva) {
@@ -2167,6 +2171,19 @@ function CubicacionApp() {
                     </span>
                   )}
                   {u.username === session && <span style={{ color: COLORS.muted }} className="text-xs">(tú)</span>}
+                  {u.role !== "admin" && (
+                    <select
+                      value={u.truckPermission || "mixto"}
+                      onChange={(e) => setUserTruckPermission(u.username, e.target.value)}
+                      style={inputStyle()}
+                      className="rounded px-1.5 py-1 text-xs outline-none"
+                      title="Camiones que este usuario puede seleccionar sin autorización"
+                    >
+                      <option value="mixto">Mixto (ambos)</option>
+                      <option value="34">Solo 3/4</option>
+                      <option value="rampla">Solo Rampla</option>
+                    </select>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <button
@@ -3412,7 +3429,8 @@ function CubicacionApp() {
             <AlertTriangle size={13} /> Esta cotización requiere autorización del administrador
           </p>
           <p style={{ color: COLORS.text }} className="text-xs mb-2">
-            Camión Rampla hacia {comunaInput} ({regionComuna}) sin que la carga supere la capacidad de un camión 3/4 ni incluya tira de 12mts.
+            Para su zona corresponde que seleccione camión 3/4, comuníquese con el administrador. (Destino: {comunaInput}
+            {regionComuna ? ` — ${regionComuna}` : ""}, sin que la carga supere la capacidad de un camión 3/4 ni incluya tira de 12mts.)
           </p>
           {autorizacionAprobada ? (
             <p style={{ color: COLORS.navy }} className="text-xs font-semibold">

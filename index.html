@@ -217,12 +217,23 @@ async function storageGet(key, shared) {
 }
 async function storageSet(key, value, shared) {
   if (shared && JSONBIN_CONFIGURADO) {
-    const all = (await remoteGetAll()) || {};
-    try {
-      all[key] = JSON.parse(value);
-    } catch {
-      all[key] = value;
+    // CRÍTICO: si no se pudo leer la base compartida, NO se debe asumir que
+    // está vacía y escribir solo esta clave — eso borraría todo lo demás
+    // (viajes, catálogo, usuarios, etc.) con cada guardado que coincida con
+    // un fallo de red o de cuota. Ante la duda, se aborta el guardado.
+    const all = await remoteGetAll();
+    if (all === null) {
+      try {
+        localStorage.setItem("cubicacion_" + key, value);
+      } catch {
+        /* ignore */
+      }
+      console.error(
+        `No se pudo guardar "${key}": no se pudo leer primero la base de datos compartida. Se abortó el guardado para no borrar el resto de los datos.`
+      );
+      return false;
     }
+    all[key] = JSON.parse(value);
     const ok = await remoteSetAll(all);
     try {
       localStorage.setItem("cubicacion_" + key, value);
@@ -236,6 +247,7 @@ async function storageSet(key, value, shared) {
   } catch {
     /* ignore */
   }
+  return true;
 }
 
 function randomSalt() {
@@ -1153,7 +1165,11 @@ function CubicacionApp() {
       const base = await usuariosFrescos();
       const next = mutador(base);
       if (next === null) return null; // el mutador canceló (ej: duplicado)
-      await persistUsers(next);
+      const ok = await persistUsers(next);
+      if (!ok) {
+        setAdminMsg("No se pudo guardar: no se logró conectar con la base de datos compartida. Intenta de nuevo en unos segundos.");
+        return null;
+      }
       return next;
     } finally {
       usuariosLockRef.current = false;
@@ -1162,8 +1178,9 @@ function CubicacionApp() {
   }
 
   async function persistUsers(next) {
-    setUsers(next);
-    await storageSet("users", JSON.stringify(next), true);
+    const ok = await storageSet("users", JSON.stringify(next), true);
+    if (ok !== false) setUsers(next);
+    return ok !== false;
   }
 
   // Igual que con "trips": nunca se construye la lista nueva a partir del

@@ -802,6 +802,34 @@ function CubicacionApp() {
     })();
   }, []);
 
+  // El historial de viajes (y los avisos) viven en la base de datos compartida.
+  // Sin esto, un usuario solo ve los viajes que existían al momento de cargar
+  // la página — los que otros agregan después no aparecen hasta refrescar
+  // manualmente. Por eso se refrescan solos cada 20 segundos mientras hay
+  // sesión activa.
+  React.useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(async () => {
+      const t = await storageGet("trips", true);
+      if (t) {
+        try {
+          setTrips(JSON.parse(t));
+        } catch {
+          /* si falla el parseo, se mantiene el historial actual */
+        }
+      }
+      const av = await storageGet("avisos", true);
+      if (av) {
+        try {
+          setAvisos(JSON.parse(av));
+        } catch {
+          /* si falla el parseo, se mantienen los avisos actuales */
+        }
+      }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [session]);
+
   const me = users ? users.find((u) => u.username === session) : null;
   const tripsVisibles = me && me.role === "admin" ? trips : trips.filter((t) => t.user === session);
   const usuariosConViajes = React.useMemo(

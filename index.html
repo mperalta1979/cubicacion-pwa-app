@@ -1135,6 +1135,19 @@ function CubicacionApp() {
     await storageSet("users", JSON.stringify(next), true);
   }
 
+  // Igual que con "trips": nunca se construye la lista nueva a partir del
+  // estado local (que puede estar vacío o desactualizado, por ejemplo justo
+  // al recién abrir la app) — siempre se vuelve a traer la lista real desde
+  // la base de datos compartida antes de modificarla y guardarla.
+  async function usuariosFrescos() {
+    const raw = await storageGet("users", true);
+    try {
+      return raw ? JSON.parse(raw) : users;
+    } catch {
+      return users;
+    }
+  }
+
   async function persistCatalogoExtra(next) {
     setCatalogoExtra(next);
     await storageSet("catalogoExtra", JSON.stringify(next), true);
@@ -1964,13 +1977,14 @@ function CubicacionApp() {
       setAdminMsg("La clave debe ser alfanumérica (solo letras y números) y de al menos 6 caracteres.");
       return;
     }
-    if (users.find((u) => u.username.toLowerCase() === uname.toLowerCase())) {
+    const base = await usuariosFrescos();
+    if (base.find((u) => u.username.toLowerCase() === uname.toLowerCase())) {
       setAdminMsg("Ese usuario ya existe.");
       return;
     }
     const salt = randomSalt();
     const hash = await hashPassword(pass, salt);
-    const next = [...users, { username: uname, salt, hash, role: newUser.role, blocked: false, truckPermission: "mixto" }];
+    const next = [...base, { username: uname, salt, hash, role: newUser.role, blocked: false, truckPermission: "mixto" }];
     await persistUsers(next);
     setNewUser({ username: "", password: "", role: "user" });
     setAdminMsg("Usuario creado.");
@@ -1978,18 +1992,21 @@ function CubicacionApp() {
 
   async function toggleBlock(username) {
     if (username === session) return;
-    const next = users.map((u) => (u.username === username ? { ...u, blocked: !u.blocked } : u));
+    const base = await usuariosFrescos();
+    const next = base.map((u) => (u.username === username ? { ...u, blocked: !u.blocked } : u));
     await persistUsers(next);
   }
   async function toggleRole(username) {
     if (username === session) return;
-    const next = users.map((u) =>
+    const base = await usuariosFrescos();
+    const next = base.map((u) =>
       u.username === username ? { ...u, role: u.role === "admin" ? "user" : "admin" } : u
     );
     await persistUsers(next);
   }
   async function setUserTruckPermission(username, valor) {
-    const next = users.map((u) => (u.username === username ? { ...u, truckPermission: valor } : u));
+    const base = await usuariosFrescos();
+    const next = base.map((u) => (u.username === username ? { ...u, truckPermission: valor } : u));
     await persistUsers(next);
   }
   async function adminSetUserPassword(username, nueva) {
@@ -1999,14 +2016,16 @@ function CubicacionApp() {
     }
     const salt = randomSalt();
     const hash = await hashPassword(nueva, salt);
-    const next = users.map((u) => (u.username === username ? { ...u, salt, hash } : u));
+    const base = await usuariosFrescos();
+    const next = base.map((u) => (u.username === username ? { ...u, salt, hash } : u));
     await persistUsers(next);
     setAdminMsg(`Clave de "${username}" actualizada correctamente.`);
     return true;
   }
   async function deleteUser(username) {
     if (username === session) return;
-    const next = users.filter((u) => u.username !== username);
+    const base = await usuariosFrescos();
+    const next = base.filter((u) => u.username !== username);
     await persistUsers(next);
   }
 

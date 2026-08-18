@@ -1771,7 +1771,19 @@ function CubicacionApp() {
       modoExceso,
       fecha,
     };
-    const next = [record, ...trips].slice(0, 500);
+    // Se vuelve a consultar la lista compartida justo antes de guardar (igual
+    // que ya se hacía con "avisos") en vez de confiar en la copia local del
+    // navegador, que puede estar unos segundos desactualizada. Sin esto, un
+    // usuario podía sobrescribir en la base de datos los viajes que otros
+    // habían guardado mientras tanto.
+    const tripsActuales = await storageGet("trips", true);
+    let listaTrips = [];
+    try {
+      listaTrips = tripsActuales ? JSON.parse(tripsActuales) : trips;
+    } catch {
+      listaTrips = trips;
+    }
+    const next = [record, ...listaTrips].slice(0, 500);
     setTrips(next);
     await storageSet("trips", JSON.stringify(next), true);
 

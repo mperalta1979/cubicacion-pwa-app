@@ -93,6 +93,7 @@ function MapPin({size, color, className}) { return React.createElement("span", {
 function Repeat({size, color, className}) { return React.createElement("span", {style:{fontSize:size||14, lineHeight:1, display:"inline-block"}, className}, "🔄"); }
 function Bell({size, color, className}) { return React.createElement("span", {style:{fontSize:size||14, lineHeight:1, display:"inline-block"}, className}, "🔔"); }
 function Inbox({size, color, className}) { return React.createElement("span", {style:{fontSize:size||14, lineHeight:1, display:"inline-block"}, className}, "📥"); }
+function Scissors({size, color, className}) { return React.createElement("span", {style:{fontSize:size||14, lineHeight:1, display:"inline-block"}, className}, "✂️"); }
 
 
 // Mascota de Petroflex — aparece animada en distintos momentos (agregar un
@@ -732,6 +733,7 @@ function CubicacionApp() {
   // segunda puede leer datos de antes de que la primera terminara de guardarse
   // — sobrescribiendo lo que la primera acababa de crear. Por eso se serializan.
   const [guardandoUsuarios, setGuardandoUsuarios] = React.useState(false);
+  const [recortandoHistorial, setRecortandoHistorial] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -1779,6 +1781,34 @@ function CubicacionApp() {
     }
   }
 
+  // Recorte de emergencia: a diferencia del tope de 30 en saveTrip (que solo
+  // aplica hacia adelante), esto achica DE INMEDIATO lo que ya está guardado
+  // en la base de datos compartida — útil cuando el historial acumulado ya
+  // supera el límite de tamaño y ni siquiera se puede guardar un usuario
+  // nuevo hasta que algo libere espacio.
+  async function recortarHistorialAhora() {
+    setRecortandoHistorial(true);
+    try {
+      const raw = await storageGet("trips", true);
+      let listaActual = [];
+      try {
+        listaActual = raw ? JSON.parse(raw) : trips;
+      } catch {
+        listaActual = trips;
+      }
+      const recortado = listaActual.slice(0, 30);
+      const ok = await storageSet("trips", JSON.stringify(recortado), true);
+      if (ok) {
+        setTrips(recortado);
+        setAdminMsg(`Historial recortado: se conservaron los últimos 30 de ${listaActual.length} viajes guardados.`);
+      } else {
+        setAdminMsg("No se pudo recortar: no se logró conectar con la base de datos compartida. Intenta de nuevo.");
+      }
+    } finally {
+      setRecortandoHistorial(false);
+    }
+  }
+
   async function saveTrip() {
     if (items.length === 0) return;
     if (necesitaDecision) return; // falta decidir consolidado/full
@@ -1844,7 +1874,7 @@ function CubicacionApp() {
     } catch {
       listaTrips = trips;
     }
-    const next = [record, ...listaTrips].slice(0, 500);
+    const next = [record, ...listaTrips].slice(0, 30);
     setTrips(next);
     await storageSet("trips", JSON.stringify(next), true);
 
@@ -3657,6 +3687,17 @@ function CubicacionApp() {
                   </option>
                 ))}
               </select>
+            )}
+            {me && me.role === "admin" && (
+              <button
+                onClick={recortarHistorialAhora}
+                disabled={recortandoHistorial}
+                title="Recorta de inmediato el historial guardado en la base de datos compartida a los últimos 30 viajes, sin esperar a que se guarde un viaje nuevo. Útil si el guardado está fallando por tamaño."
+                style={{ color: COLORS.danger }}
+                className="flex items-center gap-1 text-xs font-semibold disabled:opacity-40 hover:underline"
+              >
+                <Scissors size={14} /> {recortandoHistorial ? "Recortando..." : "Recortar historial ahora"}
+              </button>
             )}
             <button
               onClick={() => exportarExcel(tripsFiltrados, cargaActualDetalle, cargaActualInfo)}

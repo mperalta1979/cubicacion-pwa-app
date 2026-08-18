@@ -714,6 +714,12 @@ function CubicacionApp() {
   const [adminMsg, setAdminMsg] = React.useState("");
   const [pwEditingUser, setPwEditingUser] = React.useState(null);
   const [pwEditingValues, setPwEditingValues] = React.useState({ nueva: "", confirmar: "" });
+  // Evita que dos acciones sobre usuarios (crear, bloquear, cambiar clave, etc.)
+  // se disparen al mismo tiempo: cada una lee la lista fresca desde la base de
+  // datos compartida antes de guardar, y si dos se disparan casi juntas, la
+  // segunda puede leer datos de antes de que la primera terminara de guardarse
+  // — sobrescribiendo lo que la primera acababa de crear. Por eso se serializan.
+  const [guardandoUsuarios, setGuardandoUsuarios] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -1129,6 +1135,31 @@ function CubicacionApp() {
       : pdfTarget
       ? detalleParaExportar(tripsFiltrados.filter((t) => t.id === pdfTarget), [])
       : [];
+
+  // Lock sincrónico (a diferencia de un estado de React, un ref se puede leer
+  // y escribir al instante, sin esperar un re-render) que impide que dos
+  // acciones sobre usuarios se solapen. Cubre TODO el ciclo: consultar la
+  // lista fresca, modificarla y guardarla — no solo el guardado — porque la
+  // carrera ocurre precisamente en la ventana entre consultar y guardar.
+  const usuariosLockRef = React.useRef(false);
+  async function actualizarUsuarios(mutador) {
+    if (usuariosLockRef.current) {
+      setAdminMsg("Espera un momento, hay otra acción de usuarios guardándose todavía.");
+      return null;
+    }
+    usuariosLockRef.current = true;
+    setGuardandoUsuarios(true);
+    try {
+      const base = await usuariosFrescos();
+      const next = mutador(base);
+      if (next === null) return null; // el mutador canceló (ej: duplicado)
+      await persistUsers(next);
+      return next;
+    } finally {
+      usuariosLockRef.current = false;
+      setGuardandoUsuarios(false);
+    }
+  }
 
   async function persistUsers(next) {
     setUsers(next);
@@ -1977,37 +2008,37 @@ function CubicacionApp() {
       setAdminMsg("La clave debe ser alfanumérica (solo letras y números) y de al menos 6 caracteres.");
       return;
     }
-    const base = await usuariosFrescos();
-    if (base.find((u) => u.username.toLowerCase() === uname.toLowerCase())) {
-      setAdminMsg("Ese usuario ya existe.");
-      return;
-    }
     const salt = randomSalt();
     const hash = await hashPassword(pass, salt);
-    const next = [...base, { username: uname, salt, hash, role: newUser.role, blocked: false, truckPermission: "mixto" }];
-    await persistUsers(next);
-    setNewUser({ username: "", password: "", role: "user" });
-    setAdminMsg("Usuario creado.");
+    const resultado = await actualizarUsuarios((base) => {
+      if (base.find((u) => u.username.toLowerCase() === uname.toLowerCase())) {
+        setAdminMsg("Ese usuario ya existe.");
+        return null;
+      }
+      return [...base, { username: uname, salt, hash, role: newUser.role, blocked: false, truckPermission: "mixto" }];
+    });
+    if (resultado) {
+      setNewUser({ username: "", password: "", role: "user" });
+      setAdminMsg("Usuario creado.");
+    }
   }
 
   async function toggleBlock(username) {
     if (username === session) return;
-    const base = await usuariosFrescos();
-    const next = base.map((u) => (u.username === username ? { ...u, blocked: !u.blocked } : u));
-    await persistUsers(next);
+    await actualizarUsuarios((base) =>
+      base.map((u) => (u.username === username ? { ...u, blocked: !u.blocked } : u))
+    );
   }
   async function toggleRole(username) {
     if (username === session) return;
-    const base = await usuariosFrescos();
-    const next = base.map((u) =>
-      u.username === username ? { ...u, role: u.role === "admin" ? "user" : "admin" } : u
+    await actualizarUsuarios((base) =>
+      base.map((u) => (u.username === username ? { ...u, role: u.role === "admin" ? "user" : "admin" } : u))
     );
-    await persistUsers(next);
   }
   async function setUserTruckPermission(username, valor) {
-    const base = await usuariosFrescos();
-    const next = base.map((u) => (u.username === username ? { ...u, truckPermission: valor } : u));
-    await persistUsers(next);
+    await actualizarUsuarios((base) =>
+      base.map((u) => (u.username === username ? { ...u, truckPermission: valor } : u))
+    );
   }
   async function adminSetUserPassword(username, nueva) {
     if (!ALNUM_RE.test(nueva) || nueva.length < 6) {
@@ -2016,17 +2047,15 @@ function CubicacionApp() {
     }
     const salt = randomSalt();
     const hash = await hashPassword(nueva, salt);
-    const base = await usuariosFrescos();
-    const next = base.map((u) => (u.username === username ? { ...u, salt, hash } : u));
-    await persistUsers(next);
-    setAdminMsg(`Clave de "${username}" actualizada correctamente.`);
-    return true;
+    const resultado = await actualizarUsuarios((base) =>
+      base.map((u) => (u.username === username ? { ...u, salt, hash } : u))
+    );
+    if (resultado) setAdminMsg(`Clave de "${username}" actualizada correctamente.`);
+    return !!resultado;
   }
   async function deleteUser(username) {
     if (username === session) return;
-    const base = await usuariosFrescos();
-    const next = base.filter((u) => u.username !== username);
-    await persistUsers(next);
+    await actualizarUsuarios((base) => base.filter((u) => u.username !== username));
   }
 
 
@@ -2214,10 +2243,11 @@ function CubicacionApp() {
             </select>
             <button
               onClick={handleAddUser}
-              style={{ background: COLORS.navy, color: "#FFFFFF" }}
-              className="rounded px-3 py-2 text-sm font-semibold flex items-center justify-center gap-1.5"
+              disabled={guardandoUsuarios}
+              style={{ background: COLORS.navy, color: "#FFFFFF", opacity: guardandoUsuarios ? 0.6 : 1 }}
+              className="rounded px-3 py-2 text-sm font-semibold flex items-center justify-center gap-1.5 disabled:cursor-not-allowed"
             >
-              <Plus size={15} /> Crear
+              <Plus size={15} /> {guardandoUsuarios ? "Guardando..." : "Crear"}
             </button>
           </div>
           {adminMsg && (

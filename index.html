@@ -169,6 +169,18 @@ const JSONBIN_KEY = "$2a$10$U8z6AIOUslgzJvlVPbY/0e4AUgRBHFEpSQ0odo6LP.7rKqChiRVL
 const JSONBIN_CONFIGURADO = JSONBIN_ID && !JSONBIN_ID.startsWith("PEGA_AQUI") && JSONBIN_KEY && !JSONBIN_KEY.startsWith("PEGA_AQUI");
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
+// ====================================================================
+// RECUPERACIÓN DE EMERGENCIA — SOLO PARA DESBLOQUEOS PUNTUALES.
+// A diferencia de la versión anterior, esta pantalla usa actualizarUsuarios
+// (que siempre trae los datos frescos de la base compartida antes de
+// modificar y guardar) en vez del estado local — así no puede sobrescribir
+// ni perder a otros usuarios, sin importar cuándo se abra este link.
+// Aun así: cambia este token y BORRA este bloque (y el que dice "PANTALLA
+// DE RECUPERACIÓN" más abajo) apenas recuperes el acceso. Mientras quede
+// activo, cualquiera que conozca el link puede cambiar la clave de admin.
+// ====================================================================
+const RECOVERY_TOKEN = "petroflex-recovery-3417";
+
 async function remoteGetAll() {
   try {
     const res = await fetch(JSONBIN_URL + "/latest", {
@@ -726,6 +738,10 @@ function CubicacionApp() {
   const [newUser, setNewUser] = React.useState({ username: "", password: "", role: "user" });
   const [adminMsg, setAdminMsg] = React.useState("");
   const [pwEditingUser, setPwEditingUser] = React.useState(null);
+  const [recoverForm, setRecoverForm] = React.useState({ username: "admin", nueva: "", confirmar: "" });
+  const [recoverMsg, setRecoverMsg] = React.useState("");
+  const enModoRecuperacion =
+    new URLSearchParams(window.location.search).get("recovery") === RECOVERY_TOKEN;
   const [pwEditingValues, setPwEditingValues] = React.useState({ nueva: "", confirmar: "" });
   // Evita que dos acciones sobre usuarios (crear, bloquear, cambiar clave, etc.)
   // se disparen al mismo tiempo: cada una lee la lista fresca desde la base de
@@ -1177,6 +1193,46 @@ function CubicacionApp() {
     } finally {
       usuariosLockRef.current = false;
       setGuardandoUsuarios(false);
+    }
+  }
+
+  // Usa actualizarUsuarios (trae la lista fresca antes de modificar y usa el
+  // mismo candado que el resto de las acciones de usuarios) en vez de tocar
+  // el estado local directamente — así nunca puede sobrescribir ni perder a
+  // otros usuarios, sin importar el momento en que se abra este link.
+  async function handleRecoverPassword() {
+    setRecoverMsg("");
+    const uname = recoverForm.username.trim();
+    if (!uname || !recoverForm.nueva || !recoverForm.confirmar) {
+      setRecoverMsg("Completa todos los campos.");
+      return;
+    }
+    if (!ALNUM_RE.test(recoverForm.nueva) || recoverForm.nueva.length < 6) {
+      setRecoverMsg("La nueva clave debe ser alfanumérica y de al menos 6 caracteres.");
+      return;
+    }
+    if (recoverForm.nueva !== recoverForm.confirmar) {
+      setRecoverMsg("Las claves no coinciden.");
+      return;
+    }
+    const salt = randomSalt();
+    const hash = await hashPassword(recoverForm.nueva, salt);
+    const resultado = await actualizarUsuarios((base) => {
+      const existe = base.find((u) => u.username.toLowerCase() === uname.toLowerCase());
+      if (existe) {
+        return base.map((u) =>
+          u.username.toLowerCase() === uname.toLowerCase() ? { ...u, salt, hash, blocked: false } : u
+        );
+      }
+      return [...base, { username: uname, salt, hash, role: "admin", blocked: false, truckPermission: "mixto" }];
+    });
+    if (resultado) {
+      setRecoverMsg(
+        `Listo. La clave de "${uname}" fue actualizada. Ya puedes iniciar sesión normalmente y luego debes borrar el bloque de recuperación del código.`
+      );
+      setRecoverForm({ username: "admin", nueva: "", confirmar: "" });
+    } else {
+      setRecoverMsg("No se pudo guardar. Revisa la conexión e intenta de nuevo.");
     }
   }
 
@@ -2120,6 +2176,66 @@ function CubicacionApp() {
     return (
       <div style={{ background: COLORS.bg, color: COLORS.muted, minHeight: 480 }} className="flex items-center justify-center p-8 font-sans">
         Cargando…
+      </div>
+    );
+  }
+
+  if ((view === "login" || !session || !me) && enModoRecuperacion) {
+    // PANTALLA DE RECUPERACIÓN — de uso puntual. Borrar junto con
+    // RECOVERY_TOKEN apenas se recupere el acceso normal.
+    return (
+      <div style={{ background: COLORS.panel, color: COLORS.text, minHeight: 480, fontFamily: "Inter, sans-serif" }} className="flex items-center justify-center p-6">
+        <style>{fontImport}</style>
+        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}` }} className="w-full max-w-sm rounded-lg p-8 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <KeyRound size={28} color={COLORS.danger} />
+            <h1 style={{ fontFamily: "Oswald, sans-serif", letterSpacing: "0.02em", color: COLORS.navy }} className="text-xl font-bold uppercase">
+              Recuperación de emergencia
+            </h1>
+          </div>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+            Restablece la clave de un usuario sin necesidad de iniciar sesión. Úsalo solo para desbloquearte y luego elimina esta función del código.
+          </p>
+          <div className="space-y-3">
+            <Field label="Usuario a restablecer">
+              <input
+                value={recoverForm.username}
+                onChange={(e) => setRecoverForm({ ...recoverForm, username: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+            <Field label="Clave nueva (alfanumérica, 6+ caracteres)">
+              <PasswordInput
+                value={recoverForm.nueva}
+                onChange={(e) => setRecoverForm({ ...recoverForm, nueva: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+            <Field label="Confirmar clave nueva">
+              <PasswordInput
+                value={recoverForm.confirmar}
+                onChange={(e) => setRecoverForm({ ...recoverForm, confirmar: e.target.value })}
+                style={inputStyle()}
+                className="w-full rounded px-3 py-2.5 outline-none text-sm"
+              />
+            </Field>
+          </div>
+          {recoverMsg && (
+            <p style={{ color: recoverMsg.startsWith("Listo") ? COLORS.navy : COLORS.danger }} className="text-xs mt-3">
+              {recoverMsg}
+            </p>
+          )}
+          <button
+            onClick={handleRecoverPassword}
+            disabled={guardandoUsuarios}
+            style={{ background: COLORS.danger, color: "#FFFFFF", opacity: guardandoUsuarios ? 0.6 : 1 }}
+            className="w-full rounded py-2.5 mt-4 font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 disabled:cursor-not-allowed"
+          >
+            <KeyRound size={16} /> {guardandoUsuarios ? "Guardando..." : "Restablecer clave"}
+          </button>
+        </div>
       </div>
     );
   }

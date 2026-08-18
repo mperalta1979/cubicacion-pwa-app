@@ -734,6 +734,7 @@ function CubicacionApp() {
   // — sobrescribiendo lo que la primera acababa de crear. Por eso se serializan.
   const [guardandoUsuarios, setGuardandoUsuarios] = React.useState(false);
   const [recortandoHistorial, setRecortandoHistorial] = React.useState(false);
+  const [recorteHistorialMsg, setRecorteHistorialMsg] = React.useState("");
 
   React.useEffect(() => {
     (async () => {
@@ -1788,6 +1789,7 @@ function CubicacionApp() {
   // nuevo hasta que algo libere espacio.
   async function recortarHistorialAhora() {
     setRecortandoHistorial(true);
+    setRecorteHistorialMsg("");
     try {
       const raw = await storageGet("trips", true);
       let listaActual = [];
@@ -1800,9 +1802,9 @@ function CubicacionApp() {
       const ok = await storageSet("trips", JSON.stringify(recortado), true);
       if (ok) {
         setTrips(recortado);
-        setAdminMsg(`Historial recortado: se conservaron los últimos 30 de ${listaActual.length} viajes guardados.`);
+        setRecorteHistorialMsg(`Historial recortado: se conservaron los últimos 30 de ${listaActual.length} viajes guardados.`);
       } else {
-        setAdminMsg("No se pudo recortar: no se logró conectar con la base de datos compartida. Intenta de nuevo.");
+        setRecorteHistorialMsg("No se pudo recortar: no se logró conectar con la base de datos compartida. Intenta de nuevo.");
       }
     } finally {
       setRecortandoHistorial(false);
@@ -3725,6 +3727,11 @@ function CubicacionApp() {
             </button>
           </div>
         </div>
+        {recorteHistorialMsg && (
+          <p style={{ color: recorteHistorialMsg.startsWith("Historial recortado") ? COLORS.navy : COLORS.danger }} className="text-xs mb-3">
+            {recorteHistorialMsg}
+          </p>
+        )}
         {tripsFiltrados.length === 0 ? (
           <p style={{ color: COLORS.muted }} className="text-sm">
             {tripsVisibles.length === 0 ? "Sin viajes registrados todavía." : "Ningún viaje de este usuario."}

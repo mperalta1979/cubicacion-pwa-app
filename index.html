@@ -738,7 +738,25 @@ function CubicacionApp() {
 
   React.useEffect(() => {
     (async () => {
-      let usersRaw = await storageGet("users", true);
+      // Antes esto hacía 8 consultas remotas separadas (una por cada
+      // storageGet compartido), aunque las 8 claves viven en el mismo
+      // bloque de datos en JSONBin. Ahora se trae ese bloque UNA sola vez
+      // y se reparte localmente — mismo resultado, 8x menos consultas
+      // cada vez que alguien abre la app.
+      const all = JSONBIN_CONFIGURADO ? await remoteGetAll() : null;
+      const leerCompartido = (key) => {
+        if (all !== null) {
+          const v = all[key];
+          return v === undefined ? null : JSON.stringify(v);
+        }
+        try {
+          return localStorage.getItem("cubicacion_" + key);
+        } catch {
+          return null;
+        }
+      };
+
+      let usersRaw = leerCompartido("users");
       let parsedUsers;
       if (!usersRaw) {
         const salt = randomSalt();
@@ -760,7 +778,7 @@ function CubicacionApp() {
         setView("app");
       }
 
-      const t = await storageGet("trips", true);
+      const t = leerCompartido("trips");
       if (t) {
         try {
           setTrips(JSON.parse(t));
@@ -769,7 +787,7 @@ function CubicacionApp() {
         }
       }
 
-      const av = await storageGet("avisos", true);
+      const av = leerCompartido("avisos");
       if (av) {
         try {
           setAvisos(JSON.parse(av));
@@ -778,7 +796,7 @@ function CubicacionApp() {
         }
       }
 
-      const aprob = await storageGet("aprobacionesHDPE", true);
+      const aprob = leerCompartido("aprobacionesHDPE");
       if (aprob) {
         try {
           setAprobacionesHDPE(JSON.parse(aprob));
@@ -787,7 +805,7 @@ function CubicacionApp() {
         }
       }
 
-      const ce = await storageGet("catalogoExtra", true);
+      const ce = leerCompartido("catalogoExtra");
       if (ce) {
         try {
           setCatalogoExtra(JSON.parse(ce));
@@ -795,7 +813,7 @@ function CubicacionApp() {
           setCatalogoExtra([]);
         }
       }
-      const cie = await storageGet("ciudadExtra", true);
+      const cie = leerCompartido("ciudadExtra");
       if (cie) {
         try {
           setCiudadExtra(JSON.parse(cie));
@@ -803,7 +821,7 @@ function CubicacionApp() {
           setCiudadExtra([]);
         }
       }
-      const ar = await storageGet("authRequests", true);
+      const ar = leerCompartido("authRequests");
       if (ar) {
         try {
           setAuthRequests(JSON.parse(ar));
@@ -811,7 +829,7 @@ function CubicacionApp() {
           setAuthRequests([]);
         }
       }
-      const tk = await storageGet("tarifasKm", true);
+      const tk = leerCompartido("tarifasKm");
       if (tk) {
         try {
           setTarifasKm(JSON.parse(tk));
@@ -832,20 +850,20 @@ function CubicacionApp() {
   React.useEffect(() => {
     if (!session) return;
     const interval = setInterval(async () => {
-      const t = await storageGet("trips", true);
-      if (t) {
+      const all = JSONBIN_CONFIGURADO ? await remoteGetAll() : null;
+      if (all === null) return;
+      if (all.trips !== undefined) {
         try {
-          setTrips(JSON.parse(t));
+          setTrips(all.trips);
         } catch {
-          /* si falla el parseo, se mantiene el historial actual */
+          /* si falla, se mantiene el historial actual */
         }
       }
-      const av = await storageGet("avisos", true);
-      if (av) {
+      if (all.avisos !== undefined) {
         try {
-          setAvisos(JSON.parse(av));
+          setAvisos(all.avisos);
         } catch {
-          /* si falla el parseo, se mantienen los avisos actuales */
+          /* si falla, se mantienen los avisos actuales */
         }
       }
     }, 300000);

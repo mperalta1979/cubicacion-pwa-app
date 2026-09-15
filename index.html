@@ -1801,6 +1801,24 @@ function CubicacionApp() {
     }
   }
 
+  const NTFY_TOPIC_FLETES = "petroflex-fletes-calculados-7x4q";
+  async function notificarFleteCalculado(record) {
+    try {
+      const montoTexto = record.flete != null ? `$${Math.round(record.flete).toLocaleString("es-CL")}` : "sin monto";
+      await fetch(`https://ntfy.sh/${NTFY_TOPIC_FLETES}`, {
+        method: "POST",
+        body: `${record.user} calculó un flete: ${record.truck}, ${record.pct}% usado, destino ${record.comuna || "—"}, ${montoTexto}.`,
+        headers: {
+          Title: "Flete calculado",
+          Priority: "default",
+          Tags: "truck",
+        },
+      });
+    } catch (e) {
+      // Si el aviso falla, no debe interrumpir el uso normal de la app.
+    }
+  }
+
   // Recorte de emergencia: a diferencia del tope de 30 en saveTrip (que solo
   // aplica hacia adelante), esto achica DE INMEDIATO lo que ya está guardado
   // en la base de datos compartida — útil cuando el historial acumulado ya
@@ -1925,6 +1943,7 @@ function CubicacionApp() {
     setSavedMsg(esEdicion ? `Viaje guardado (versión ${record.version})` : "Viaje guardado");
     setTimeout(() => setSavedMsg(""), 2500);
     setMascotaGuardarKey((k) => k + 1);
+    notificarFleteCalculado(record);
   }
 
   // Limpia el formulario para empezar un viaje nuevo desde cero (sale del

@@ -628,6 +628,118 @@ function enviarPorCorreo(trips, cargaActual, cargaActualInfo) {
   document.body.removeChild(a);
 }
 
+// Pasos del tutorial de bienvenida. El último paso (solo admin) se agrega
+// aparte, en TUTORIAL_PASOS_ADMIN, y se concatena según el rol del usuario.
+const TUTORIAL_PASOS = [
+  {
+    titulo: "Bienvenido a Cubicación",
+    texto:
+      "Esta app te ayuda a calcular cuánto espacio ocupa un pedido en el camión y a dejar guardado el cálculo (el \"flete\") para que quede en el historial. Este tutorial te muestra lo esencial en unos pasos — puedes verlo de nuevo cuando quieras con el botón 💡 de arriba.",
+  },
+  {
+    titulo: "1. Agrega los códigos",
+    texto:
+      "Busca cada producto por su código o descripción y escribe la cantidad a despachar. Se va armando una lista con el detalle de cada ítem y el porcentaje de camión que ocupa.",
+  },
+  {
+    titulo: "2. Elige el camión",
+    texto:
+      "Selecciona el tipo de camión: Mixto, 3/4 o Rampla. Algunos productos (por su largo o formato) solo se pueden cargar en Rampla, y la app te avisa si corresponde. Si tu usuario tiene restringido el tipo de camión, vas a necesitar autorización del administrador para usar otro.",
+  },
+  {
+    titulo: "3. Guarda el cálculo",
+    texto:
+      "Cuando el pedido esté listo, guarda el viaje para dejarlo registrado con fecha, usuario, camión y destino. Puedes volver a editarlo después — cada edición queda como una nueva versión, sin perder la original.",
+  },
+  {
+    titulo: "4. Revisa el historial",
+    texto:
+      "En \"Historial\" puedes buscar y revisar todos los viajes guardados, los tuyos y los de los demás usuarios, filtrando por usuario si lo necesitas.",
+  },
+];
+const TUTORIAL_PASOS_ADMIN = [
+  {
+    titulo: "5. Panel de administrador",
+    texto:
+      "Como administrador tienes accesos extra en el encabezado: Usuarios (crear, bloquear, cambiar clave y definir qué camión puede usar cada uno), Catálogo, Ciudades, Solicitudes de autorización y Avisos (donde puedes revisar en detalle cualquier cálculo guardado por otro usuario).",
+  },
+];
+
+// Modal de tutorial, reutilizado tanto para la apertura automática (primer
+// ingreso) como para la reapertura manual desde el botón 💡 del encabezado.
+function TutorialModal({ pasos, paso, setPaso, onCerrarSinMarcar, onEntendido }) {
+  const total = pasos.length;
+  const actual = pasos[paso];
+  const esUltimo = paso === total - 1;
+  return (
+    <div
+      style={{ background: "rgba(0,0,0,0.5)", zIndex: 100 }}
+      className="fixed inset-0 flex items-center justify-center p-4 no-print"
+    >
+      <div
+        style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}` }}
+        className="w-full max-w-md rounded-lg p-6 shadow-lg"
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Lightbulb size={20} color={COLORS.accent} />
+          <h2 style={{ fontFamily: "Oswald, sans-serif", color: COLORS.navy }} className="text-lg font-bold">
+            {actual.titulo}
+          </h2>
+        </div>
+        <p style={{ color: COLORS.text }} className="text-sm leading-relaxed mb-5">
+          {actual.texto}
+        </p>
+        <div className="flex items-center justify-center gap-1.5 mb-5">
+          {pasos.map((_, i) => (
+            <span
+              key={i}
+              style={{ background: i === paso ? COLORS.navy : COLORS.border, width: 7, height: 7 }}
+              className="rounded-full inline-block"
+            />
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => setPaso((p) => Math.max(0, p - 1))}
+            disabled={paso === 0}
+            style={{ color: paso === 0 ? COLORS.border : COLORS.muted }}
+            className="text-xs font-semibold px-2 py-2"
+          >
+            ← Anterior
+          </button>
+          {!esUltimo && (
+            <button
+              onClick={() => setPaso((p) => Math.min(total - 1, p + 1))}
+              style={{ background: COLORS.navy, color: "#FFFFFF" }}
+              className="rounded px-4 py-2 text-xs font-semibold hover:opacity-90"
+            >
+              Siguiente →
+            </button>
+          )}
+        </div>
+        {esUltimo && (
+          <div className="flex flex-col gap-2 mt-4 pt-4" style={{ borderTop: `1px solid ${COLORS.border}` }}>
+            <button
+              onClick={onEntendido}
+              style={{ background: COLORS.navy, color: "#FFFFFF" }}
+              className="rounded py-2.5 text-sm font-semibold hover:opacity-90"
+            >
+              Entendido, no mostrar de nuevo
+            </button>
+            <button
+              onClick={onCerrarSinMarcar}
+              style={{ color: COLORS.muted }}
+              className="text-xs py-1 hover:text-black"
+            >
+              Recordármelo la próxima vez que entre
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CubicacionApp() {
   const [loading, setLoading] = React.useState(true);
   const [users, setUsers] = React.useState(null);
@@ -664,6 +776,11 @@ function CubicacionApp() {
   const [mascotaLineaTipo, setMascotaLineaTipo] = React.useState("linea");
   // Mascota de bienvenida (pizarra) — se muestra una vez justo después del login.
   const [mascotaBienvenidaKey, setMascotaBienvenidaKey] = React.useState(0);
+  // Tutorial de bienvenida: se abre solo automáticamente si el usuario (campo
+  // tutorialVisto en su ficha) nunca lo cerró con "Entendido". Siempre se
+  // puede reabrir a mano con el botón 💡 del encabezado.
+  const [tutorialAbierto, setTutorialAbierto] = React.useState(false);
+  const [tutorialPaso, setTutorialPaso] = React.useState(0);
   const [mascotaGuardarKey, setMascotaGuardarKey] = React.useState(0);
   const [ultimaSolicitudAprobadaId, setUltimaSolicitudAprobadaId] = React.useState(null);
   // Tarifas por km editables (Admin) — se usan cuando una comuna no tiene
@@ -1492,6 +1609,20 @@ function CubicacionApp() {
     setView("app");
     setLoginPass("");
     setMascotaBienvenidaKey((k) => k + 1);
+    if (!u.tutorialVisto) {
+      setTutorialPaso(0);
+      setTutorialAbierto(true);
+    }
+  }
+
+  // Marca el tutorial como visto para el usuario actual (ya no se abrirá
+  // solo al iniciar sesión). Usa el mismo mecanismo seguro que el resto de
+  // los cambios de usuario (fetch fresco + candado) para no pisar cambios
+  // de otro admin guardados justo antes.
+  async function marcarTutorialVisto() {
+    await actualizarUsuarios((base) =>
+      base.map((u) => (u.username === session ? { ...u, tutorialVisto: true } : u))
+    );
   }
 
   async function handleLogout() {
@@ -2220,7 +2351,9 @@ function CubicacionApp() {
   }
 
   const solicitudesPendientes = authRequests.filter((r) => r.estado === "pendiente").length;
+  const tutorialPasos = me && me.role === "admin" ? [...TUTORIAL_PASOS, ...TUTORIAL_PASOS_ADMIN] : TUTORIAL_PASOS;
   const Header = (
+    <>
     <div className="flex items-center justify-between mb-5 no-print" style={{ position: "relative" }}>
       {mascotaBienvenidaKey > 0 && (
         <Mascota
@@ -2278,6 +2411,17 @@ function CubicacionApp() {
             )}
           </button>
         )}
+        <button
+          onClick={() => {
+            setTutorialPaso(0);
+            setTutorialAbierto(true);
+          }}
+          style={{ color: COLORS.muted }}
+          className="hover:text-black"
+          title="Ver tutorial"
+        >
+          <Lightbulb size={18} />
+        </button>
         <span style={{ color: COLORS.muted }} className="text-sm hidden sm:inline">
           {session} {me.role === "admin" && <ShieldCheck size={13} className="inline mb-0.5" color={COLORS.celeste} />}
         </span>
@@ -2289,6 +2433,19 @@ function CubicacionApp() {
         </button>
       </div>
     </div>
+    {tutorialAbierto && (
+      <TutorialModal
+        pasos={tutorialPasos}
+        paso={tutorialPaso}
+        setPaso={setTutorialPaso}
+        onCerrarSinMarcar={() => setTutorialAbierto(false)}
+        onEntendido={async () => {
+          setTutorialAbierto(false);
+          await marcarTutorialVisto();
+        }}
+      />
+    )}
+    </>
   );
 
   if (view === "admin") {
